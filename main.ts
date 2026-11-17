@@ -18,7 +18,14 @@
 //      weighted mean over the pool in ln p1 (bandwidth 1.0), trimmed 15% of weight
 //      from each tail, then smoothed over neighbouring hours. The kernel saturates:
 //      a first hour larger than any past launch is forecast like the largest past
-//      launches, not extrapolated linearly past them.
+//      launches, not extrapolated linearly past them. One more guard on top: for
+//      very large hour-1 prints the curve is blended toward persistence (0), with
+//      a weight that rises smoothly (logistic in ln p1, half-strength at 150k,
+//      at most a 50% shrink) and only shrinks positive, rising values. The
+//      flattest giants in the pool -- Starfield, Marvel Rivals, Borderlands 4 --
+//      decay or stay flat instead of climbing into the mid-day rise the kernel
+//      still inherits from smaller launches, so their forecast is flattened;
+//      the early dip and late decay are left alone.
 //
 //   3. Spread. For every pool launch, the curve is refit without it (leave-one-out,
 //      at that launch's own p1) and the residual in each hour is recorded. The
@@ -53,6 +60,12 @@ const FALLBACK_SIGMA = 0.15;
 const KERNEL_BW = 1.0;
 /** Weight trimmed from each tail before the kernel-weighted mean of log-ratios. */
 const TRIM_FRAC = 0.15;
+/** Giant blend toward persistence: max shrink of positive (rising) curve values. */
+const GIANT_BLEND_MAX = 0.5;
+/** ln(hour-1 print) at which the giant blend reaches half strength (150k viewers). */
+const GIANT_BLEND_CENTER = Math.log(150000);
+/** Logistic scale (ln p1 units) of the giant blend's ramp from small to huge. */
+const GIANT_BLEND_SCALE = 0.5;
 /** Pool launches nearest the target in ln p1 whose LOO residuals set sigma. */
 const SIGMA_NEIGHBOURS = 12;
 /** Floor / cap on sigma, in log units. */
@@ -219,7 +232,19 @@ const fitCurve = (pool: Prepared[], tp1: number): number[] => {
       if (keep.length >= 3) pairs = keep;
     }
     const tot = pairs.reduce((s, [, w]) => s + w, 0);
-    curve.push(tot > 0 ? pairs.reduce((s, [v, w]) => s + v * w, 0) / tot : 0);
+    let m = tot > 0 ? pairs.reduce((s, [v, w]) => s + v * w, 0) / tot : 0;
+    // Flatten the curve for very large hour-1 prints: blend positive (rising)
+    // values toward persistence (0), with a weight that grows smoothly -- logistic
+    // in ln p1 -- from ~0 for small launches to GIANT_BLEND_MAX for the giants.
+    // The biggest launches peak in hour 1 and stay flat, so only their excess
+    // mid-day rise is shrunk; dips and decay (m <= 0) are untouched. Applied
+    // before the neighbouring-hour smoothing, and inside the LOO refits too, so
+    // the spread calibration sees the same curve the forecast uses.
+    if (m > 0) {
+      const b = GIANT_BLEND_MAX / (1 + Math.exp(-(logTp1 - GIANT_BLEND_CENTER) / GIANT_BLEND_SCALE));
+      m *= 1 - b;
+    }
+    curve.push(m);
   }
   return smooth3(curve);
 };

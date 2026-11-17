@@ -74,6 +74,21 @@ would put hour 20 at 0.07× of hour 1 for a 1.5M print). A linear
 per-hour slope on ln p1 was tested and rejected for exactly this reason; a
 k-nearest-neighbour median was also tested and was worse.
 
+On top of the kernel, the curve is blended toward persistence for very
+large hour-1 prints: positive (rising) values m_h > 0 are shrunk by a factor
+1 − b, where b rises smoothly — logistic in ln p1, half-strength at 150k,
+at most 0.5 — from ~0 for small launches to 0.5 for the giants. The reason
+is in the LOO record: the flattest giants (Starfield, Marvel Rivals,
+Borderlands 4) decay or stay flat instead of climbing into the mid-day rise
+the kernel still inherits from smaller launches. Only the rise is shrunk;
+the early dip and the late decay (m_h ≤ 0) are left alone, and the blend is
+applied inside the leave-one-out refits too, so the spread calibration sees
+the same curve the forecast uses. It was tuned on a grid (centre 100–400k,
+max shrink 0.2–0.8, uniform vs rise-only); the rise-only form at 150k / 0.5
+was the plateau choice — it improves the big-launch LOO loss from 0.215 to
+0.212 and flips Borderlands 4 from a tie to a win, without touching small
+launches (their blend weight is near zero).
+
 The target's own pre-release level (the ratio of hour 1 to its pre-release
 median) was tested as a second conditioning variable and did not help once ln
 p1 was in. Hour-1 channel counts were tested too (partial correlations
@@ -104,10 +119,10 @@ its real release-day curve, pinball loss on the log scale; the shipped
 
 | set | n | this model | house baseline | wins |
 | --- | --- | --- | --- | --- |
-| all launches | 37 | **0.452** | 0.930 | 32/37 |
-| rolling-midnight | 32 | **0.363** | 0.564 | 27/32 |
-| big (p1 ≥ 100k) | 16 | **0.215** | 0.261 | 11/16 |
-| small (p1 < 100k) | 21 | **0.633** | 1.439 | 21/21 |
+| all launches | 37 | **0.451** | 0.930 | 33/37 |
+| rolling-midnight | 32 | **0.361** | 0.564 | 28/32 |
+| big (p1 ≥ 100k) | 16 | **0.212** | 0.261 | 12/16 |
+| small (p1 < 100k) | 21 | **0.634** | 1.439 | 21/21 |
 | simultaneous-unlock | 5 | **1.027** | 3.271 | 5/5 |
 
 90% coverage on the LOO: 0.82 overall, 0.92 on big launches (an honest 90%
@@ -115,18 +130,22 @@ band should cover ~0.90). Typical median miss: 44% on big launches, 104% on
 rolling launches overall — the day's shape genuinely varies a lot between
 launches, and the spread above prices that in.
 
-The five LOO losses are all big, flat launches where the model predicts a
-little too much mid-day rise (Monster Hunter Wilds, Starfield, Marvel Rivals,
-Diablo IV, and Borderlands 4, which is a tie at 0.253). The model's edge on
-big launches comes from the other eleven, including the largest ones
-(ELDEN RING 0.114 vs 0.211, Hogwarts Legacy 0.139 vs 0.288, The Last of Us
-Part II 0.124 vs 0.247).
+The four remaining LOO losses are all big, flat launches where the model
+still predicts a little too much mid-day rise (Monster Hunter Wilds,
+Starfield, Marvel Rivals, Diablo IV). The giant blend above (§2) already
+flipped the fifth, Borderlands 4, from a tie to a win (0.232 vs 0.253), and
+cut Starfield's loss from 0.344 to 0.307; Monster Hunter Wilds is the odd
+one out — its real curve jumps *up* mid-day (to ~2.5× hour 1), so flattening
+hurts it slightly (0.459 → 0.480). The model's edge on big launches comes
+from the other twelve, including the largest ones
+(ELDEN RING 0.110 vs 0.211, Hogwarts Legacy 0.140 vs 0.288, The Last of Us
+Part II 0.127 vs 0.247).
 
 ## Caveats, stated plainly
 
 - **The final is one launch, not 37.** LOO says the model beats persistence
   on average and on most launches, but on any single big flat launch
-  persistence can win (it did on 5 of 16 big LOO cases, by small margins).
+  persistence can win (it did on 4 of 16 big LOO cases, by small margins).
   The prize is decided by one day.
 - **GTA VI's hour 1 will probably exceed the data.** The largest hour-1 print
   in the pool is 875k (ELDEN RING). If GTA VI prints 1–2M, the forecast leans
